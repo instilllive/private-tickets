@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Host desk · Private tickets</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main>
+    <header class="top">
+      <div>
+        <p class="eyebrow">Host desk</p>
+        <h1>Guest list</h1>
+      </div>
+      <a id="door-link" href="/door">Open door scanner</a>
+    </header>
+    <p id="flash" class="flash" role="status"></p>
+    <div class="grid">
+      <section class="card stack">
+        <h2>Host token</h2>
+        <p class="muted">Sent as a bearer token. Stored only in this browser tab.</p>
+        <label>Token
+          <input id="token" type="password" autocomplete="off" spellcheck="false">
+        </label>
+        <div class="row">
+          <button id="save-token" type="button">Use token</button>
+          <span id="auth-state" class="muted"></span>
+        </div>
+      </section>
+      <section class="card">
+        <h2>New event</h2>
+        <form id="event-form" class="stack">
+          <label>Name <input name="name" required maxlength="120" placeholder="Listening room"></label>
+          <label>Starts <input name="starts_at" type="datetime-local" required></label>
+          <label>Venue <input name="venue" required maxlength="120" placeholder="June hall"></label>
+          <label>Host <input name="host" required maxlength="120" placeholder="Mark"></label>
+          <button type="submit">Create event</button>
+        </form>
+      </section>
+    </div>
+    <section class="card" style="margin-top: 1rem">
+      <h2>Tickets</h2>
+      <div class="stack">
+        <label>Event
+          <select id="event"></select>
+        </label>
+        <form id="issue-form" class="row">
+          <label style="flex: 1">Guest name
+            <input name="guest_name" required maxlength="120" placeholder="Ada Lovelace">
+          </label>
+          <button type="submit">Issue ticket</button>
+        </form>
+        <p id="issued-link"></p>
+        <div style="overflow-x: auto">
+          <table>
+            <thead>
+              <tr><th>Guest</th><th>Status</th><th>Link</th><th></th></tr>
+            </thead>
+            <tbody id="guests"></tbody>
+          </table>
+        </div>
+        <h3>Transfers</h3>
+        <div id="transfers" class="stack"></div>
+      </div>
+    </section>
+  </main>
+  <script src="/host.js"></script>
+</body>
+</html>
