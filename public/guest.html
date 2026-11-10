@@ -9,13 +9,20 @@
 </head>
 <body>
   <article class="ticket">
+    <p class="brand"><span>Breakpoint</span> side-event door</p>
     <p class="eyebrow" id="eyebrow">Guest ticket</p>
     <h1 id="event-name">Loading…</h1>
     <p id="when" class="muted"></p>
     <p id="place" class="muted"></p>
     <p><strong id="guest-name"></strong> <span id="status" class="status"></span></p>
     <div class="stub">
-      <img id="qr" alt="Rotating entry code" hidden>
+      <div class="qr-stage">
+        <svg class="ring" viewBox="0 0 120 120" aria-hidden="true">
+          <circle class="ring-track" cx="60" cy="60" r="54"></circle>
+          <circle id="ring" class="ring-value" cx="60" cy="60" r="54"></circle>
+        </svg>
+        <img id="qr" alt="Rotating entry code" hidden>
+      </div>
       <p id="countdown" class="muted">New code in <span id="remain">–</span>s</p>
       <p id="code" class="code"></p>
       <p id="pending"></p>

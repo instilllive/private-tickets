@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import QRCode from 'qrcode';
 import { STEP_MS, stepAt, stepEndsAt } from './clock';
 import { compareMacs, computeMac, mintCode, newAccessToken, newSecret, parseCode, stepWithinWindow } from './codes';
+import { readGuestCsv, type CsvRowError } from './csv';
 import {
   getEvent,
   getTicket,
@@ -9,12 +10,14 @@ import {
   mapTicket,
   type DB,
   type EventRow,
+  type StaffRow,
   type TicketRow,
   type TicketStatus,
   type TransferRow,
   type TransferStatus,
 } from './db';
 import { type ScanResult } from './format';
+import { admitTicket, rejectAtClaim, rejectBeforeClaim } from './protocol';
 
 const DUMMY_SECRET = newSecret();
 
@@ -31,10 +34,21 @@ export type PublicTicket = {
   id: string;
   event_id: string;
   guest_name: string;
+  email: string | null;
+  handle: string | null;
   status: TicketStatus;
   created_at: string;
   checked_in_at: string | null;
   guest_path: string;
+};
+
+export type PublicStaff = {
+  id: string;
+  event_id: string;
+  label: string;
+  door_path: string;
+  created_at: string;
+  revoked_at: string | null;
 };
 
 export type PublicTransfer = {
@@ -81,6 +95,8 @@ function publicTicket(row: TicketRow): PublicTicket {
     id: row.id,
     event_id: row.event_id,
     guest_name: row.guest_name,
+    email: row.email,
+    handle: row.handle,
     status: row.status,
     created_at: row.created_at,
     checked_in_at: row.checked_in_at,
@@ -118,13 +134,15 @@ export function createEvent(
 
 export function issueTicket(
   db: DB,
-  input: { eventId: string; guestName: string; nowMs: number },
+  input: { eventId: string; guestName: string; nowMs: number; email?: string | null; handle?: string | null },
 ): { ticket: PublicTicket; accessToken: string } | { error: 'not_found' } {
   if (!getEvent(db, input.eventId)) return { error: 'not_found' };
   const row: TicketRow = {
     id: randomUUID(),
     event_id: input.eventId,
     guest_name: input.guestName,
+    email: input.email ?? null,
+    handle: input.handle ?? null,
     status: 'issued',
     secret: newSecret(),
     access_token: newAccessToken(),
@@ -132,10 +150,39 @@ export function issueTicket(
     checked_in_at: null,
   };
   db.prepare(
-    `INSERT INTO tickets (id, event_id, guest_name, status, secret, access_token, created_at, checked_in_at)
-     VALUES (@id, @event_id, @guest_name, @status, @secret, @access_token, @created_at, @checked_in_at)`,
+    `INSERT INTO tickets (id, event_id, guest_name, email, handle, status, secret, access_token, created_at, checked_in_at)
+     VALUES (@id, @event_id, @guest_name, @email, @handle, @status, @secret, @access_token, @created_at, @checked_in_at)`,
   ).run(row);
   return { ticket: publicTicket(row), accessToken: row.access_token };
+}
+
+export type ImportGuestsResult =
+  | { ok: true; created: PublicTicket[]; errors: CsvRowError[] }
+  | { ok: false; error: 'not_found' | 'too_large' | 'missing_name_column' | 'duplicate_column' | 'too_many_rows' };
+
+export function importGuests(
+  db: DB,
+  input: { eventId: string; csv: string; nowMs: number },
+): ImportGuestsResult {
+  if (!getEvent(db, input.eventId)) return { ok: false, error: 'not_found' };
+  const read = readGuestCsv(input.csv);
+  if (!read.ok) return { ok: false, error: read.error };
+  const insert = db.transaction((guests: typeof read.guests) => {
+    const created: PublicTicket[] = [];
+    for (const guest of guests) {
+      const issued = issueTicket(db, {
+        eventId: input.eventId,
+        guestName: guest.name,
+        email: guest.email,
+        handle: guest.handle,
+        nowMs: input.nowMs,
+      });
+      if ('error' in issued) throw new Error('event missing during import');
+      created.push(issued.ticket);
+    }
+    return created;
+  });
+  return { ok: true, created: insert(read.guests), errors: read.errors };
 }
 
 export function listTickets(db: DB, eventId: string): PublicTicket[] | null {
@@ -225,7 +272,7 @@ export function approveTransfer(db: DB, transferId: string, nowMs: number): Appr
     const updated = db
       .prepare(
         `UPDATE tickets
-         SET guest_name = ?, secret = ?, access_token = ?
+         SET guest_name = ?, secret = ?, access_token = ?, email = NULL, handle = NULL
          WHERE id = ? AND status = 'issued'`,
       )
       .run(transfer.to_name, secret, accessToken, ticket.id);
@@ -291,23 +338,26 @@ export function scanCode(db: DB, input: { eventId: string; code: string; nowMs: 
 
   const ticket = getTicket(db, parsed.ticketId);
   const expected = computeMac(ticket?.secret ?? DUMMY_SECRET, parsed.ticketId, parsed.step);
-  if (!ticket || !compareMacs(expected, parsed.mac)) return { result: 'reject', reason: 'invalid_code' };
-
-  if (!stepWithinWindow(parsed.step, input.nowMs)) {
-    return { result: 'reject', reason: 'expired' };
-  }
-  if (ticket.event_id !== input.eventId) {
-    return { result: 'reject', reason: 'wrong_event' };
-  }
+  const macOk = Boolean(ticket) && compareMacs(expected, parsed.mac);
+  const early = rejectBeforeClaim({
+    macOk,
+    inWindow: stepWithinWindow(parsed.step, input.nowMs),
+    eventMatches: ticket?.event_id === input.eventId,
+  });
+  if (early) return early;
+  if (!ticket) return { result: 'reject', reason: 'invalid_code' };
 
   const claim = db.transaction((): ScanResult => {
     const current = getTicket(db, ticket.id);
-    if (!current) return { result: 'reject', reason: 'invalid_code' };
-    const lockedMac = computeMac(current.secret, current.id, parsed.step);
-    if (!compareMacs(lockedMac, parsed.mac)) return { result: 'reject', reason: 'invalid_code' };
-    if (current.event_id !== input.eventId) return { result: 'reject', reason: 'wrong_event' };
-    if (current.status === 'revoked') return { result: 'reject', reason: 'revoked' };
-    if (current.status !== 'issued') return { result: 'reject', reason: 'already_used' };
+    const lockedMac = computeMac(current?.secret ?? DUMMY_SECRET, parsed.ticketId, parsed.step);
+    const lockedOk = Boolean(current) && compareMacs(lockedMac, parsed.mac);
+    const blocked = rejectAtClaim({
+      present: Boolean(current),
+      macOk: lockedOk,
+      eventMatches: current?.event_id === input.eventId,
+      status: current?.status ?? null,
+    });
+    if (blocked || !current) return blocked ?? { result: 'reject', reason: 'invalid_code' };
     const info = db
       .prepare(
         `UPDATE tickets SET status = 'checked_in', checked_in_at = ?
@@ -319,16 +369,106 @@ export function scanCode(db: DB, input: { eventId: string; code: string; nowMs: 
       if (again?.status === 'revoked') return { result: 'reject', reason: 'revoked' };
       return { result: 'reject', reason: 'already_used' };
     }
-    return {
-      result: 'admit',
-      ticket_id: current.id,
-      guest_name: current.guest_name,
-      event_id: current.event_id,
-    };
+    return admitTicket({
+      id: current.id,
+      eventId: current.event_id,
+      guestName: current.guest_name,
+      status: current.status,
+    });
   });
   return claim.immediate();
 }
 
 export function snapshotTicket(db: DB, ticketId: string): TicketRow | null {
   return getTicket(db, ticketId);
+}
+
+function publicStaff(row: StaffRow): PublicStaff {
+  return {
+    id: row.id,
+    event_id: row.event_id,
+    label: row.label,
+    door_path: `/door/s/${row.token}`,
+    created_at: row.created_at,
+    revoked_at: row.revoked_at,
+  };
+}
+
+function getStaffByToken(db: DB, token: string): StaffRow | null {
+  const row = db.prepare('SELECT * FROM staff_tokens WHERE token = ?').get(token) as StaffRow | undefined;
+  return row ?? null;
+}
+
+export function createStaffToken(
+  db: DB,
+  input: { eventId: string; label: string; nowMs: number },
+): PublicStaff | { error: 'not_found' } {
+  if (!getEvent(db, input.eventId)) return { error: 'not_found' };
+  const row: StaffRow = {
+    id: randomUUID(),
+    event_id: input.eventId,
+    token: newAccessToken(),
+    label: input.label,
+    created_at: iso(input.nowMs),
+    revoked_at: null,
+  };
+  db.prepare(
+    `INSERT INTO staff_tokens (id, event_id, token, label, created_at, revoked_at)
+     VALUES (@id, @event_id, @token, @label, @created_at, @revoked_at)`,
+  ).run(row);
+  return publicStaff(row);
+}
+
+export function listStaff(db: DB, eventId: string): PublicStaff[] | null {
+  if (!getEvent(db, eventId)) return null;
+  const rows = db
+    .prepare('SELECT * FROM staff_tokens WHERE event_id = ? ORDER BY created_at ASC')
+    .all(eventId) as StaffRow[];
+  return rows.map(publicStaff);
+}
+
+export function revokeStaffToken(
+  db: DB,
+  staffId: string,
+  nowMs: number,
+): PublicStaff | { error: 'not_found' | 'not_revocable' } {
+  const existing = db.prepare('SELECT * FROM staff_tokens WHERE id = ?').get(staffId) as StaffRow | undefined;
+  if (!existing) return { error: 'not_found' };
+  if (existing.revoked_at) return { error: 'not_revocable' };
+  const info = db
+    .prepare(`UPDATE staff_tokens SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL`)
+    .run(iso(nowMs), staffId);
+  if (info.changes !== 1) return { error: 'not_revocable' };
+  const updated = db.prepare('SELECT * FROM staff_tokens WHERE id = ?').get(staffId) as StaffRow | undefined;
+  if (!updated) return { error: 'not_found' };
+  return publicStaff(updated);
+}
+
+export type StaffSession = {
+  label: string;
+  event: PublicEvent;
+};
+
+export function staffSession(db: DB, token: string): StaffSession | null {
+  const staff = getStaffByToken(db, token);
+  if (!staff || staff.revoked_at) return null;
+  const event = getEvent(db, staff.event_id);
+  if (!event) return null;
+  return { label: staff.label, event: publicEvent(event) };
+}
+
+/**
+ * Scan with a door-staff token. The event is the one on the token.
+ * A different event id is rejected without claiming any ticket.
+ */
+export function scanWithStaff(
+  db: DB,
+  input: { token: string; code: string; nowMs: number; eventId?: string | null },
+): { ok: true; scan: ScanResult } | { ok: false; error: 'unauthorized' } {
+  const staff = getStaffByToken(db, input.token);
+  if (!staff || staff.revoked_at) return { ok: false, error: 'unauthorized' };
+  if (input.eventId && input.eventId !== staff.event_id) {
+    return { ok: true, scan: { result: 'reject', reason: 'wrong_event' } };
+  }
+  return { ok: true, scan: scanCode(db, { eventId: staff.event_id, code: input.code, nowMs: input.nowMs }) };
 }

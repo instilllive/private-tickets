@@ -2,6 +2,27 @@
 
 A small invite-only ticketing app for a private event. Guests are named. There is no payment, no resale marketplace, and the app never messages anyone. The door code rotates every few seconds, in the same spirit as Ticketmaster SafeTix: a screenshot goes stale, and a code that already admitted someone cannot be used again.
 
+## Nitro 05
+
+Breakpoint 2026 is Solana's conference at Olympia London, 15–17 November. Around it, about 155 side events — dinners, mixers, investor rooms — are invite-only or capped. The host has a list of names. The door is a volunteer with a phone. A screenshot forwarded in a group chat should not get a second person in.
+
+This is that door. The host imports a CSV (`name`, and optionally `email` and `handle`). Each good row becomes a named ticket. Bad rows are reported and skipped. The host copies each guest link and hands it over. The app does not email or text anyone. The guest page shows a QR code with a countdown ring. It changes every five seconds. The volunteer sees a green ADMIT and the guest's name, or a red REJECTED and the reason: already used, expired, wrong event, or revoked. The host desk shows a live checked-in count.
+
+NoahAI Nitro 05 asks for a product people could genuinely use at Breakpoint. The brief is at https://luma.com/kk4ymgrb. A judge can run the whole loop with no server from `web-demo/`: import the sample list, open a rotating ticket, scan it on the same screen, see the replay rejected, see a 15-second-old code rejected, then approve a transfer.
+
+## At a Breakpoint side event
+
+1. Create the event, or run `npm run seed` for the demo dinner "Breakpoint side-event dinner, London".
+2. Import `samples/breakpoint-guests.csv`, or paste your own list. Fix any rows the import names.
+3. Copy each guest link and give it to that person yourself.
+4. Create a door-staff link and give it to the volunteer. That page can scan this event only. It cannot open or edit the guest list.
+5. At the door, the guest shows the live QR. The volunteer admits them once.
+6. If someone gives their seat away, they request a transfer. Nothing changes until you approve it. Approval replaces the secret, so the old code and the old link die.
+
+## Browser demo
+
+`web-demo/` is a self-contained page for a front-end builder. It has no login and no server. The guest list lives in `localStorage`. Check-in uses the same decision order as the server, and the code is an HMAC from WebCrypto, truncated the same way. `npm run demo:web` serves it. The files to copy are `web-demo/` plus `src/protocol.ts`, `src/csv.ts`, `src/clock.ts`, `src/format.ts`, `src/demo-event.ts`, and `samples/breakpoint-guests.csv`.
+
 ## How a code works
 
 Each ticket has a secret of 32 random bytes that stays on the server. The guest page polls the server and shows a QR code. The payload is:
@@ -38,6 +59,8 @@ On approval the same ticket gets the new name, a new 32-byte secret, and a new g
 
 ## Threat model
 
+In plain words: the rotating code stops a screenshot and a second scan of a ticket that already came in. It does not prove who is holding the phone. Anyone looking at the live guest page can keep showing a fresh code. The host token is one shared secret, not a set of accounts. The staff link is narrower than the host token, and it is still just a bearer link. One SQLite file, one process.
+
 What rotating codes actually stop:
 
 - Forwarding a screenshot or a copied payload. It dies within about 10 seconds, and by 15 seconds it is three steps old and always rejected.
@@ -49,7 +72,8 @@ What they do not stop:
 
 - Someone holding the live phone, or anyone who has the guest link open, can keep showing fresh codes. That is the same limit as SafeTix. The rotation proves the phone is talking to the server right now. It does not prove who is holding the phone.
 - The host token is a single shared bearer secret. Anyone who has it can issue, revoke, and approve. It is not an account system.
-- The door endpoint is not separately authenticated. Anyone who can reach the server and knows an event id can submit codes. That fits a door device on a trusted network. It is not a production perimeter.
+- A door-staff link is scoped to one event. With it, a volunteer can scan codes for that night and see ADMIT or REJECTED, including the guest's name. They cannot list the other guests, import, revoke, or approve a transfer. A code from another event is rejected and that ticket stays unclaimed. Revoking the link stops it.
+- The open `/api/scan` route is still there for the host's own door page. Anyone who can reach the server and knows an event id can submit a code to it. That fits a host running the door on their own phone. It is not a lock for the public internet.
 - Event name, venue, and start time are readable without the host token so the door page can list them. The guest list and ticket links are not.
 - There is one SQLite file and one process. This is not a multi-node deployment.
 
@@ -62,7 +86,18 @@ cp .env.example .env
 # Put a real token in .env. Generate one with: openssl rand -hex 32
 npm install
 npm start
+npm run seed
 ```
+
+`npm run seed` writes the Breakpoint side-event dinner and the sample guests into `DATABASE_PATH`, and prints guest links plus one door-staff link. Run it again and it will not duplicate the dinner.
+
+The no-server demo:
+
+```bash
+npm run demo:web
+```
+
+Open http://localhost:4173. Import the sample list, open a guest, and use "Scan the ticket on this screen". That path needs no camera, so it works on one laptop.
 
 `.env` is loaded if it is present. Values already set in the environment win. The sample token in `.env.example` is a placeholder, not a secret, and it is not loaded on its own.
 
@@ -99,4 +134,4 @@ GitHub Actions runs typecheck and the tests on Node 20 and Node 22.
 
 ## What this is not
 
-No payments, no marketplace, no guest messaging, no production deploy, no multi-user accounts.
+No payments, no marketplace, no guest messaging, no production deploy, no crypto wallets, no multi-user accounts.

@@ -4,17 +4,24 @@ import { join } from 'node:path';
 import { Hono } from 'hono';
 import { systemClock, type Clock } from './clock';
 import type { DB } from './db';
+import { cleanGuestEmail, cleanGuestHandle, cleanGuestName } from './csv';
 import {
   approveTransfer,
   createEvent,
+  createStaffToken,
   guestView,
+  importGuests,
   issueTicket,
   listEvents,
+  listStaff,
   listTickets,
   listTransfers,
   requestTransfer,
+  revokeStaffToken,
   revokeTicket,
   scanCode,
+  scanWithStaff,
+  staffSession,
 } from './service';
 
 export type AppDeps = {
@@ -106,6 +113,31 @@ export function createApp(deps: AppDeps): Hono {
     return c.json(result);
   });
 
+  app.get('/api/staff/:token', (c) => {
+    const session = staffSession(deps.db, c.req.param('token'));
+    if (!session) return c.json({ error: 'not_found' }, 404);
+    c.header('cache-control', 'no-store');
+    return c.json(session);
+  });
+
+  app.post('/api/staff/:token/scan', async (c) => {
+    const body = await readJson(c);
+    if (!body) return c.json({ error: 'invalid_json' }, 400);
+    const code = typeof body.code === 'string' ? body.code.trim() : '';
+    if (code.length === 0) return c.json({ error: 'invalid_body' }, 400);
+    const requestedEvent = body.event_id === undefined ? null : cleanText(body.event_id, 80);
+    if (body.event_id !== undefined && !requestedEvent) return c.json({ error: 'invalid_body' }, 400);
+    const result = scanWithStaff(deps.db, {
+      token: c.req.param('token'),
+      code,
+      nowMs: clock(),
+      eventId: requestedEvent,
+    });
+    if (!result.ok) return c.json({ error: result.error }, 401);
+    c.header('cache-control', 'no-store');
+    return c.json(result.scan);
+  });
+
   app.get('/api/guest/:token', async (c) => {
     const view = await guestView(deps.db, c.req.param('token'), clock());
     if (!view) return c.json({ error: 'not_found' }, 404);
@@ -150,14 +182,82 @@ export function createApp(deps: AppDeps): Hono {
     return c.json({ event }, 201);
   });
 
+  host.post('/events/:eventId/import', async (c) => {
+    const contentType = c.req.header('content-type') ?? '';
+    let csv = '';
+    if (contentType.includes('text/csv') || contentType.includes('text/plain')) {
+      csv = await c.req.text();
+    } else {
+      const body = await readJson(c);
+      if (!body || typeof body.csv !== 'string') return c.json({ error: 'invalid_body' }, 400);
+      csv = body.csv;
+    }
+    if (csv.trim() === '') return c.json({ error: 'invalid_body' }, 400);
+    const result = importGuests(deps.db, { eventId: c.req.param('eventId'), csv, nowMs: clock() });
+    if (!result.ok) {
+      const status = result.error === 'not_found' ? 404 : 400;
+      return c.json({ error: result.error }, status);
+    }
+    return c.json({ created: result.created, errors: result.errors });
+  });
+
+  host.post('/events/:eventId/staff', async (c) => {
+    const body = await readJson(c);
+    if (!body) return c.json({ error: 'invalid_json' }, 400);
+    const label = cleanText(body.label ?? 'Door', 80) ?? 'Door';
+    if (body && body.label !== undefined && typeof body.label !== 'string') {
+      return c.json({ error: 'invalid_body' }, 400);
+    }
+    if (body && typeof body.label === 'string' && !cleanText(body.label, 80)) {
+      return c.json({ error: 'invalid_body' }, 400);
+    }
+    const result = createStaffToken(deps.db, {
+      eventId: c.req.param('eventId'),
+      label,
+      nowMs: clock(),
+    });
+    if ('error' in result) return c.json({ error: result.error }, 404);
+    return c.json({ staff: result }, 201);
+  });
+
+  host.get('/events/:eventId/staff', (c) => {
+    const staff = listStaff(deps.db, c.req.param('eventId'));
+    if (!staff) return c.json({ error: 'not_found' }, 404);
+    return c.json({ staff });
+  });
+
+  host.post('/staff/:staffId/revoke', (c) => {
+    const result = revokeStaffToken(deps.db, c.req.param('staffId'), clock());
+    if ('error' in result) {
+      const status = result.error === 'not_found' ? 404 : 409;
+      return c.json({ error: result.error }, status);
+    }
+    return c.json({ staff: result });
+  });
+
   host.post('/events/:eventId/tickets', async (c) => {
     const body = await readJson(c);
     if (!body) return c.json({ error: 'invalid_json' }, 400);
-    const guestName = cleanText(body.guest_name);
-    if (!guestName) return c.json({ error: 'invalid_name' }, 400);
+    const named = typeof body.guest_name === 'string' ? cleanGuestName(body.guest_name) : { ok: false as const };
+    if (!named.ok) return c.json({ error: 'invalid_name' }, 400);
+    const email =
+      body.email === undefined || body.email === ''
+        ? { ok: true as const, email: null }
+        : typeof body.email === 'string'
+          ? cleanGuestEmail(body.email)
+          : { ok: false as const };
+    const handle =
+      body.handle === undefined || body.handle === ''
+        ? { ok: true as const, handle: null }
+        : typeof body.handle === 'string'
+          ? cleanGuestHandle(body.handle)
+          : { ok: false as const };
+    if (!email.ok || !handle.ok) return c.json({ error: 'invalid_body' }, 400);
     const result = issueTicket(deps.db, {
       eventId: c.req.param('eventId'),
-      guestName,
+      guestName: named.name,
+      email: email.email,
+      handle: handle.handle,
       nowMs: clock(),
     });
     if ('error' in result) return c.json({ error: result.error }, 404);
@@ -203,6 +303,7 @@ export function createApp(deps: AppDeps): Hono {
   app.get('/', (c) => c.html(page(publicDir, 'index.html')));
   app.get('/host', (c) => c.html(page(publicDir, 'host.html')));
   app.get('/door', (c) => c.html(page(publicDir, 'door.html')));
+  app.get('/door/s/:token', (c) => c.html(page(publicDir, 'door.html')));
   app.get('/t/:token', (c) => c.html(page(publicDir, 'guest.html')));
 
   for (const [route, contentType] of Object.entries(STATIC_FILES)) {

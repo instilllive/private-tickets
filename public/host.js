@@ -6,6 +6,10 @@ const guestsBody = document.querySelector('#guests');
 const transfersEl = document.querySelector('#transfers');
 const issuedLink = document.querySelector('#issued-link');
 const doorLink = document.querySelector('#door-link');
+const tallyCount = document.querySelector('#tally-count');
+const tallyLabel = document.querySelector('#tally-label');
+const importReport = document.querySelector('#import-report');
+const staffLinks = document.querySelector('#staff-links');
 
 const TOKEN_KEY = 'private-tickets-host-token';
 const EVENT_KEY = 'private-tickets-event';
@@ -98,6 +102,10 @@ async function refresh() {
     api('GET', `/api/host/events/${eventId}/tickets`),
     api('GET', `/api/host/events/${eventId}/transfers`),
   ]);
+  const checkedIn = ticketData.tickets.filter((ticket) => ticket.status === 'checked_in').length;
+  tallyCount.textContent = String(checkedIn);
+  tallyLabel.textContent = `of ${ticketData.tickets.length} checked in`;
+  await renderStaff(eventId);
   if (ticketData.tickets.length === 0) {
     const tr = document.createElement('tr');
     const td = document.createElement('td');
@@ -111,8 +119,18 @@ async function refresh() {
     const tr = document.createElement('tr');
     const name = document.createElement('td');
     name.textContent = ticket.guest_name;
+    const extra = [ticket.email, ticket.handle].filter(Boolean).join(' · ');
+    if (extra) {
+      const sub = document.createElement('div');
+      sub.className = 'muted';
+      sub.textContent = extra;
+      name.append(sub);
+    }
     const status = document.createElement('td');
-    status.textContent = ticket.status.replaceAll('_', ' ');
+    const pill = document.createElement('span');
+    pill.className = `pill ${ticket.status}`;
+    pill.textContent = ticket.status.replaceAll('_', ' ');
+    status.append(pill);
     const link = document.createElement('td');
     link.append(linkLine(ticket.guest_path, 'Open ticket'));
     const actions = document.createElement('td');
@@ -210,6 +228,92 @@ document.querySelector('#issue-form').addEventListener('submit', async (event) =
     issuedLink.append(`Ticket for ${data.ticket.guest_name}: `);
     issuedLink.append(linkLine(data.guest_path, data.guest_path));
     say('Ticket issued. Copy the link to the guest. This app does not message them.');
+    await refresh();
+  } catch (error) {
+    say(error.message);
+  }
+});
+
+async function renderStaff(eventId) {
+  staffLinks.replaceChildren();
+  const data = await api('GET', `/api/host/events/${eventId}/staff`);
+  const active = data.staff.filter((staff) => !staff.revoked_at);
+  if (active.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'muted';
+    empty.textContent = 'No door link yet.';
+    staffLinks.append(empty);
+    return;
+  }
+  for (const staff of active) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    const link = linkLine(staff.door_path, `${staff.label}: ${staff.door_path}`);
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'secondary';
+    button.textContent = 'Revoke';
+    button.addEventListener('click', async () => {
+      try {
+        await api('POST', `/api/host/staff/${staff.id}/revoke`, {});
+        say(`Revoked the ${staff.label} link`);
+        await refresh();
+      } catch (error) {
+        say(error.message);
+      }
+    });
+    row.append(link, button);
+    staffLinks.append(row);
+  }
+}
+
+document.querySelector('#csv-file').addEventListener('change', async (event) => {
+  const file = event.currentTarget.files && event.currentTarget.files[0];
+  if (!file) return;
+  document.querySelector('#csv-text').value = await file.text();
+});
+
+document.querySelector('#import-csv').addEventListener('click', async () => {
+  const eventId = selectedEventId();
+  if (!eventId) {
+    say('Create or select an event first.');
+    return;
+  }
+  const csv = document.querySelector('#csv-text').value;
+  if (!csv.trim()) {
+    say('Paste a CSV or choose a file.');
+    return;
+  }
+  try {
+    const data = await api('POST', `/api/host/events/${eventId}/import`, { csv });
+    importReport.replaceChildren();
+    const summary = document.createElement('p');
+    summary.textContent = `${data.created.length} guests added. ${data.errors.length} rows need a fix.`;
+    importReport.append(summary);
+    for (const error of data.errors) {
+      const line = document.createElement('p');
+      line.textContent = `Line ${error.line}: ${error.reason}`;
+      importReport.append(line);
+    }
+    say('Import finished. Copy each guest link yourself. This app does not message anyone.');
+    await refresh();
+  } catch (error) {
+    say(error.message);
+  }
+});
+
+document.querySelector('#staff-form').addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const eventId = selectedEventId();
+  if (!eventId) {
+    say('Create or select an event first.');
+    return;
+  }
+  const label = new FormData(event.currentTarget).get('label');
+  try {
+    const data = await api('POST', `/api/host/events/${eventId}/staff`, { label: label || 'Door' });
+    event.currentTarget.reset();
+    say(`Door link ready: ${data.staff.door_path}`);
     await refresh();
   } catch (error) {
     say(error.message);

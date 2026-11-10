@@ -8,3 +8,4 @@ data/
 .env
 .DS_Store
 public/vendor/
+web-demo/dist/

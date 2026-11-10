@@ -9,6 +9,7 @@
 </head>
 <body>
   <main>
+    <p class="brand"><span>Breakpoint</span> side-event door</p>
     <header class="top">
       <div>
         <p class="eyebrow">Host desk</p>
@@ -32,16 +33,20 @@
       <section class="card">
         <h2>New event</h2>
         <form id="event-form" class="stack">
-          <label>Name <input name="name" required maxlength="120" placeholder="Listening room"></label>
+          <label>Name <input name="name" required maxlength="120" placeholder="Breakpoint side-event dinner, London"></label>
           <label>Starts <input name="starts_at" type="datetime-local" required></label>
-          <label>Venue <input name="venue" required maxlength="120" placeholder="June hall"></label>
-          <label>Host <input name="host" required maxlength="120" placeholder="Mark"></label>
+          <label>Venue <input name="venue" required maxlength="120" placeholder="Private room, Olympia London"></label>
+          <label>Host <input name="host" required maxlength="120" placeholder="Nia Cole"></label>
           <button type="submit">Create event</button>
         </form>
       </section>
     </div>
     <section class="card" style="margin-top: 1rem">
       <h2>Tickets</h2>
+      <div class="tally">
+        <p id="tally-count" class="tally-count">0</p>
+        <p id="tally-label" class="muted">of 0 checked in</p>
+      </div>
       <div class="stack">
         <label>Event
           <select id="event"></select>
@@ -52,7 +57,22 @@
           </label>
           <button type="submit">Issue ticket</button>
         </form>
+        <h3>Import a guest list</h3>
+        <p class="muted">CSV header <span class="code">name,email,handle</span>. Email and handle can be blank. Bad rows are skipped and listed.</p>
+        <input id="csv-file" type="file" accept=".csv,text/csv,text/plain">
+        <textarea id="csv-text" placeholder="name,email,handle"></textarea>
+        <button id="import-csv" type="button">Import guests</button>
+        <div id="import-report" class="stack"></div>
         <p id="issued-link"></p>
+        <h3>Door staff</h3>
+        <p class="muted">A volunteer with this link can scan this event and nothing else. They cannot open the guest list.</p>
+        <form id="staff-form" class="row">
+          <label style="flex: 1">Label
+            <input name="label" maxlength="80" placeholder="Front door">
+          </label>
+          <button type="submit">Create door link</button>
+        </form>
+        <div id="staff-links" class="stack"></div>
         <div style="overflow-x: auto">
           <table>
             <thead>
