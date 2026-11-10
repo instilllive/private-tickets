@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect fill='%2316130f' width='16' height='16'/%3E%3Ccircle fill='%23e4ff6a' cx='8' cy='8' r='3'/%3E%3C/svg%3E">
+  <title>Breakpoint side-event door</title>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <p class="brand"><span>Breakpoint</span> side-event door</p>
+    <div>
+      <h1 id="event-name">Breakpoint side-event dinner, London</h1>
+      <p id="event-meta" class="meta"></p>
+    </div>
+  </header>
+  <p class="how">Import the list, open a ticket, then scan it here. A second scan is rejected. A 15-second-old code is rejected. A transfer waits until the host approves it.</p>
+  <p id="note" class="note" role="status"></p>
+  <main class="workspace">
+    <section class="panel panel-host">
+      <p class="eyebrow">Host desk</p>
+      <div class="tally">
+        <p id="tally-count">0</p>
+        <p id="tally-label" class="muted">checked in</p>
+      </div>
+      <div class="row">
+        <button id="import-sample" type="button">Import sample guest list</button>
+        <label class="file">CSV file
+          <input id="csv-file" type="file" accept=".csv,text/csv,text/plain">
+        </label>
+      </div>
+      <p id="import-report" class="report"></p>
+      <ul id="import-errors"></ul>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Guest</th><th>Status</th></tr>
+          </thead>
+          <tbody id="guests"></tbody>
+        </table>
+      </div>
+      <h2>Transfers</h2>
+      <div id="transfers" class="stack"></div>
+    </section>
+    <section class="panel panel-ticket">
+      <p class="eyebrow">Guest ticket</p>
+      <h2 id="guest-name">Choose a guest</h2>
+      <p id="guest-status" class="muted"></p>
+      <div class="qr-stage">
+        <svg class="ring" viewBox="0 0 120 120" aria-hidden="true">
+          <circle class="ring-track" cx="60" cy="60" r="54"></circle>
+          <circle id="ring" class="ring-value" cx="60" cy="60" r="54"></circle>
+        </svg>
+        <img id="qr" alt="Rotating entry code" hidden>
+      </div>
+      <p id="countdown" class="countdown">New code in <span id="remain">–</span>s</p>
+      <p id="pending" class="pending"></p>
+      <form id="transfer-form" class="stack" hidden>
+        <label>Transfer this ticket to
+          <input id="transfer-name" name="to_name" required maxlength="120" placeholder="New guest name">
+        </label>
+        <button type="submit">Request transfer</button>
+      </form>
+    </section>
+    <section class="panel panel-door">
+      <p class="eyebrow">Door</p>
+      <h2>Scanner</h2>
+      <div id="result" class="result" aria-live="assertive">
+        <p class="result-title">Ready</p>
+        <p class="result-detail">Scan a live code</p>
+      </div>
+      <div class="stack door-actions">
+        <button id="scan-screen" type="button">Scan the ticket on this screen</button>
+        <button id="scan-stale" type="button" class="secondary">Scan a 15-second-old code</button>
+        <button id="camera" type="button" class="secondary">Use the camera</button>
+        <p id="camera-state" class="muted"></p>
+        <div id="reader"></div>
+      </div>
+    </section>
+  </main>
+  <p class="foot"><button id="reset" type="button" class="text">Reset this browser demo</button></p>
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>

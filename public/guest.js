@@ -12,6 +12,11 @@ const holdEl = document.querySelector('#hold');
 const form = document.querySelector('#transfer');
 const errorEl = document.querySelector('#error');
 const countdown = document.querySelector('#countdown');
+const ring = document.querySelector('#ring');
+const ringRadius = Number(ring?.getAttribute('r') || 54);
+const ringLength = 2 * Math.PI * ringRadius;
+if (ring) ring.style.strokeDasharray = `${ringLength} ${ringLength}`;
+let stepMs = 5000;
 
 let stepEndsAt = 0;
 let skew = 0;
@@ -45,6 +50,7 @@ async function load() {
     errorEl.textContent = '';
     skew = data.server_now - Date.now();
     stepEndsAt = data.step_ends_at;
+    stepMs = data.step_ms || 5000;
     status = data.status;
     eventName.textContent = data.event.name;
     whenEl.textContent = new Date(data.event.starts_at).toLocaleString();
@@ -83,6 +89,11 @@ async function load() {
 function frame() {
   const remain = stepEndsAt - localNow();
   remainEl.textContent = stepEndsAt ? Math.max(0, remain / 1000).toFixed(1) : '–';
+  if (ring) {
+    const fraction = stepEndsAt ? Math.max(0, Math.min(1, remain / stepMs)) : 0;
+    ring.style.strokeDashoffset = String(ringLength * (1 - fraction));
+    ring.classList.toggle('urgent', remain < 1000);
+  }
   const dueForStep = status === 'issued' && stepEndsAt && remain <= 40 && Date.now() >= nextFetchAt;
   const dueForStatus = status === 'issued' && Date.now() >= nextStatusAt;
   if (dueForStep || dueForStatus) {

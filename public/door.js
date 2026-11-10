@@ -2,7 +2,11 @@ const eventSelect = document.querySelector('#event');
 const resultEl = document.querySelector('#result');
 const cameraButton = document.querySelector('#camera');
 const cameraState = document.querySelector('#camera-state');
+const eventLock = document.querySelector('#event-lock');
+const hostLink = document.querySelector('#host-link');
 const params = new URLSearchParams(location.search);
+const staffMatch = location.pathname.match(/^\/door\/s\/([^/]+)$/);
+const staffToken = staffMatch ? decodeURIComponent(staffMatch[1]) : '';
 
 let scanner = null;
 let busy = false;
@@ -28,6 +32,25 @@ const REASONS = {
 };
 
 async function loadEvents() {
+  if (staffToken) {
+    const res = await fetch(`/api/staff/${encodeURIComponent(staffToken)}`, { cache: 'no-store' });
+    const data = await res.json().catch(() => ({}));
+    eventSelect.replaceChildren();
+    if (!res.ok) {
+      show('reject', 'REJECTED', 'this door link is not active');
+      cameraButton.disabled = true;
+      return;
+    }
+    const option = document.createElement('option');
+    option.value = data.event.id;
+    option.textContent = `${data.event.name} · ${data.event.venue}`;
+    eventSelect.append(option);
+    eventSelect.disabled = true;
+    eventLock.hidden = false;
+    eventLock.textContent = `${data.event.name} · scan only`;
+    hostLink.hidden = true;
+    return;
+  }
   const res = await fetch('/api/events');
   const data = await res.json();
   eventSelect.replaceChildren();
@@ -55,10 +78,10 @@ async function submit(code) {
     show('reject', 'REJECTED', 'pick an event');
     return;
   }
-  const res = await fetch('/api/scan', {
+  const res = await fetch(staffToken ? `/api/staff/${encodeURIComponent(staffToken)}/scan` : '/api/scan', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ event_id: eventId, code }),
+    body: JSON.stringify(staffToken ? { code } : { event_id: eventId, code }),
   });
   const data = await res.json();
   if (!res.ok) {
