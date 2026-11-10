@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Door · Private tickets</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main>
+    <header class="top">
+      <div>
+        <p class="eyebrow">Door</p>
+        <h1>Scanner</h1>
+      </div>
+      <a href="/host">Host desk</a>
+    </header>
+    <section class="card stack">
+      <label>Event
+        <select id="event"></select>
+      </label>
+      <div class="row">
+        <button id="camera" type="button">Start camera</button>
+        <span id="camera-state" class="muted"></span>
+      </div>
+      <div id="reader"></div>
+      <form id="manual" class="row">
+        <label style="flex: 1">Paste a code
+          <input name="code" autocomplete="off" spellcheck="false" placeholder="pt1.…">
+        </label>
+        <button type="submit">Check</button>
+      </form>
+      <div id="result" class="result" aria-live="assertive">Waiting</div>
+    </section>
+  </main>
+  <script src="/vendor/html5-qrcode.min.js"></script>
+  <script src="/door.js"></script>
+</body>
+</html>

@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Your ticket</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <article class="ticket">
+    <p class="eyebrow" id="eyebrow">Guest ticket</p>
+    <h1 id="event-name">Loading…</h1>
+    <p id="when" class="muted"></p>
+    <p id="place" class="muted"></p>
+    <p><strong id="guest-name"></strong> <span id="status" class="status"></span></p>
+    <div class="stub">
+      <img id="qr" alt="Rotating entry code" hidden>
+      <p id="countdown" class="muted">New code in <span id="remain">–</span>s</p>
+      <p id="code" class="code"></p>
+      <p id="pending"></p>
+      <p id="hold" class="muted">A photo of this code expires in a few seconds. The person holding this page can still enter.</p>
+    </div>
+    <form id="transfer" class="stack" style="margin-top: 1rem" hidden>
+      <label>Transfer this ticket to
+        <input name="to_name" required maxlength="120" placeholder="New guest name">
+      </label>
+      <button type="submit">Request transfer</button>
+    </form>
+    <p id="error" class="flash" role="status"></p>
+  </article>
+  <script src="/guest.js"></script>
+</body>
+</html>
